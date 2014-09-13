@@ -67,6 +67,28 @@ sub _genNewFunc {
 
 sub _genParseLineFunc {
 	my %config = @_;
+	
+	(exists($config{'regex_line_comment_start'}) && defined($config{'regex_line_comment_start'})) || die;
+	
+	my ($regex_mline_comment_start, $regex_mline_comment_end, $validCommentStatesMapRef) = (undef, undef);
+	my %validCommentStatesMap;
+	
+	if (exists($config{'regex_mline_comment_start'}) || exists($config{'regex_mline_comment_end'}))
+	{
+		((exists $config{'regex_mline_comment_start'})
+			&& defined(($regex_mline_comment_start = $config{'regex_mline_comment_start'}))
+			&& (exists $config{'regex_mline_comment_end'})
+			&& defined(($regex_mline_comment_end = $config{'regex_mline_comment_end'}))
+		) || die;
+	}
+	
+	$validCommentStatesMapRef = $config{'hash_comment_valid_states'};
+	if (defined $validCommentStatesMapRef)
+	{
+		%validCommentStatesMap = %$validCommentStatesMapRef;
+	}
+	$validCommentStatesMapRef = (defined $validCommentStatesMapRef);
+	
 	return sub {
 		my $runtime = $_[0]->{(undef)};
 		my ($s, $rc, $parserFunc) = ($_[1], @$runtime);
@@ -80,7 +102,7 @@ sub _genParseLineFunc {
 		{
 			# TODO: die and report error at line
 		}
-	}
+	};
 }
 
 sub execute {

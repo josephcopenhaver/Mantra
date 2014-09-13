@@ -21,8 +21,8 @@ sub new {
 
 	my %config = ();
 	$config{'regex_line_comment_start'} = qr/^\s*#/;
-	$config{'regex_mline_comment_start'} = qr/^=pod\s*/;
-	$config{'regex_mline_comment_end'} = qr/^=cut\s*/;
+	$config{'regex_mline_comment_start'} = qr/^=pod\s*$/;
+	$config{'regex_mline_comment_end'} = qr/^=cut\s*$/;
 	$config{'new_sub_parse_line'} = sub {
 		
 
@@ -36,6 +36,11 @@ sub new {
 			$$rc = -1; # default state is error state
 			return undef; # TODO
 	};};
+	$config{'hash_comment_valid_states'} = {
+		(map { $_ => 1 } (
+			STATE_NONE
+		))
+	};
 	return Mantra::Framework->new($_[0], %config);
 }
 
