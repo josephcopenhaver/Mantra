@@ -20,20 +20,54 @@ use FileHandle;
 
 sub new {
 	# override's a class once's its configuration has been confirmed usable
-	my $frameworkClass = shift;# this class... not important
-	my $classToOverride = shift;
+	my $frameworkClass = shift;# this class
+	my $classToOverride = shift;# class to generate
 	my %config = @_;
-	my $initializer = $config{'new_sub_parse_line'};
+	my ($self, $initializer, $r) = (undef, $config{'new_sub_parse_line'});
 
-	my $nNewFunc = sub {
+	(sub {
+		my ($i, $methodName, $genMethodName1, $genMethodName2) = (0);
+		my @genSpec = (
+			1, 'new', "\$classToOverride,\$initializer",
+			0, 'execute',
+			1, 'parseLine', "\%config",
+		);
+		do {{
+			if ($genSpec[$i++]) {
+				$methodName = $genSpec[$i++];
+				($genMethodName1, $genMethodName2) = (uc(substr($methodName, 0, 1)), substr($methodName, 1, length($methodName) - 1));
+				$r = sprintf("*{%s::%s} = %s::_gen%s%sFunc(%s);return 1;", $classToOverride, $methodName, $frameworkClass, $genMethodName1, $genMethodName2, $genSpec[$i++]);
+			}
+			else {
+				$methodName = $genSpec[$i++];
+				$r = sprintf("*{%s::%s} = *{%s::%s};return 1;", $classToOverride, $methodName, $frameworkClass, $methodName);
+			}
+			$r = eval($r);
+			die if ($@ || !$r);
+		}} while ($i <= $#genSpec);
+	})->();
+
+	$r = "\$self = $classToOverride\->new();return 1;";
+	$r = eval($r);
+	die if ($@ || !$r || !(defined $self));
+	return $self;
+}
+
+sub _genNewFunc {
+	my $classToOverride = shift;
+	my $initializer = shift;
+	return sub {
 		my $state = 0;
 		my $self = {
 			(undef) => [\$state, $initializer->()]
 		};
 		return bless($self, $classToOverride);
 	};
+}
 
-	my $nParseLineFunc = sub {
+sub _genParseLineFunc {
+	my %config = @_;
+	return sub {
 		my $runtime = $_[0]->{(undef)};
 		my ($s, $rc, $parserFunc) = ($_[1], @$runtime);
 		#print "GOT: '" . substr($s, 0, length($s) - (($s =~ /[^\r\n]\z/) ? 0 : (($s =~ /\r\n/) ? 2 : 1))) . "'\n";
@@ -46,19 +80,7 @@ sub new {
 		{
 			# TODO: die and report error at line
 		}
-	};
-
-	my $r = eval("*{$classToOverride\::new} = \$nNewFunc;return 1;");
-	die if ($@ || !$r);
-	$r = eval("*{$classToOverride\::execute} = *{$frameworkClass\::execute};return 1;");
-	die if ($@ || !$r);
-	$r = eval("*{$classToOverride\::parseLine} = \$nParseLineFunc;return 1;");
-	die if ($@ || !$r);
-
-	my $self = undef;
-	$r = eval("\$self = $classToOverride\->new();return 1;");
-	die if ($@ || !$r || !(defined $self));
-	return $self;
+	}
 }
 
 sub execute {
