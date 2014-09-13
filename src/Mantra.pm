@@ -16,7 +16,7 @@ use constant {
 # Alloc new file generator
 sub new {
 	my ($class, $generatorName) = @_;
-	die unless ($generatorName !~ /[\r\n]/ && $generatorName =~ /^[a-zA-Z0-9_\:]+$/);
+	die unless ($generatorName !~ /[\r\n]/ && $generatorName =~ /^[a-zA-Z0-9_]+(?:\:\:[a-zA-Z0-9_]+)*$/);
 	$generatorName = PACKAGE_PREFIX . $generatorName;
 	my ($newCallFinished, $generator) = (undef, undef);
 	eval("use $generatorName;\n\$generator = $generatorName\->new();\n\$newCallFinished = 1;");
