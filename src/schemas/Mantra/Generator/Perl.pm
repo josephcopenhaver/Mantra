@@ -36,7 +36,8 @@ sub new {
 			$$rc = -1; # default state is error state
 			$$rc = STATE_NONE;
 			return undef; # TODO
-	};};
+		};
+	};
 	$config{'hash_comment_valid_states'} = {
 		(map { $_ => undef } (
 			STATE_NONE
