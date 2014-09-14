@@ -20,8 +20,7 @@ use FileHandle;
 
 sub new {
 	# override's a class once's its configuration has been confirmed usable
-	my $frameworkClass = shift;# this class
-	my $classToOverride = shift;# class to generate
+	my ($frameworkClass, $classToOverride) = ((shift), (shift));# this class, class to generate
 	my %config = @_;
 	my ($self, $initializer, $r) = (undef, $config{'new_sub_parse_line'});
 
@@ -53,13 +52,32 @@ sub new {
 	return $self;
 }
 
+
+###
+# Helpers
+
+
+sub trimEOL {
+	my $s = $_[0];
+	return substr($s, 0, length($s) - (($s =~ /[^\r\n]\z/) ? 0 : (($s =~ /\r\n/) ? 2 : 1)));
+}
+
+sub inspectComment {
+	#printf("inspectComment: '%s'\n", trimEOL($_[0]));
+}
+
+
+###
+# class functionality
+
+
 sub _genNewFunc {
-	my $classToOverride = shift;
-	my $initializer = shift;
+	my ($classToOverride, $initializer) = ((shift), (shift));
 	return sub {
+		my $lineNum = 0;
 		my $state = 0;
 		my $self = {
-			(undef) => [\$state, $initializer->()]
+			(undef) => [\$lineNum, \$state, $initializer->()]
 		};
 		return bless($self, $classToOverride);
 	};
@@ -67,14 +85,14 @@ sub _genNewFunc {
 
 sub _genParseLineFunc {
 	my %config = @_;
+	my $regex_line_comment_start;
 	
-	(exists($config{'regex_line_comment_start'}) && defined($config{'regex_line_comment_start'})) || die;
+	((exists $config{'regex_line_comment_start'}) && defined(($regex_line_comment_start = $config{'regex_line_comment_start'}))) || die;
 	
-	my ($regex_mline_comment_start, $regex_mline_comment_end, $validCommentStatesMapRef) = (undef, undef);
+	my ($inMultilineComment, $regex_mline_comment_start, $regex_mline_comment_end, $validCommentStatesMapRef) = (0, undef, undef);
 	my %validCommentStatesMap;
 	
-	if (exists($config{'regex_mline_comment_start'}) || exists($config{'regex_mline_comment_end'}))
-	{
+	if (exists($config{'regex_mline_comment_start'}) || exists($config{'regex_mline_comment_end'})) {
 		((exists $config{'regex_mline_comment_start'})
 			&& defined(($regex_mline_comment_start = $config{'regex_mline_comment_start'}))
 			&& (exists $config{'regex_mline_comment_end'})
@@ -83,25 +101,52 @@ sub _genParseLineFunc {
 	}
 	
 	$validCommentStatesMapRef = $config{'hash_comment_valid_states'};
-	if (defined $validCommentStatesMapRef)
-	{
+	if (defined $validCommentStatesMapRef) {
 		%validCommentStatesMap = %$validCommentStatesMapRef;
 	}
 	$validCommentStatesMapRef = (defined $validCommentStatesMapRef);
 	
 	return sub {
-		my $runtime = $_[0]->{(undef)};
-		my ($s, $rc, $parserFunc) = ($_[1], @$runtime);
-		#print "GOT: '" . substr($s, 0, length($s) - (($s =~ /[^\r\n]\z/) ? 0 : (($s =~ /\r\n/) ? 2 : 1))) . "'\n";
+		my $self = $_[0];
+		my $runtime = $self->{(undef)};
+		my ($s, $lineNum, $rc, $parserFunc) = ($_[1], @$runtime);
+		$$lineNum += 1;
+
+		#printf("GOT: '%s'\n", trimEOL($s));
+
 		do
 		{{
-			$s = $parserFunc->($s, $rc);
-			last;# TODO
+			if ($inMultilineComment) {
+				if ($s =~ $regex_mline_comment_end) {
+					my $pre = $`;
+					$s = $';
+					$inMultilineComment = 0;
+					inspectComment($pre);
+				}
+				else {
+					inspectComment($s);
+					$s = undef;
+				}
+				next;
+			}
+			elsif ((defined $validCommentStatesMapRef) && (exists $validCommentStatesMap{$$rc})) {
+				if ($s =~ $regex_mline_comment_start) {
+					my ($pre, $post) = ($`, $');
+					die if (defined($pre) && length($pre));
+					$s = $post;
+					$inMultilineComment = 1;
+					next;
+				}
+				elsif ($s =~ $regex_line_comment_start) {
+					my $post = $';
+					inspectComment($post);
+					$s = undef;
+					next;
+				}
+			}
+			$s = $parserFunc->($self, $s, $rc);
 		}} while ((defined $s) && $$rc >= 0);
-		if ($$rc < 0)
-		{
-			# TODO: die and report error at line
-		}
+		die($self->{'errMsg'}) if ($$rc < 0);
 	};
 }
 
