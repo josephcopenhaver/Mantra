@@ -8,25 +8,14 @@ our @EXPORT_OK = ();
 use FileHandle;
 
 
-### TODO:
-## define methodology that should be standard in all environments
-#
-# e.g. support for
-# 
-# rip = relative import path for a spcific file's template definitions
-# lip = library import path for a specific file's template definitions (relative import paths are not traversed)
-# [rl]idef = include definition of a template by name, using relative lookup paths first
-# [rl]imp = import/dump the contents of a file by relative or library path
-
 sub new {
 	# override's a class once's its configuration has been confirmed usable
-	my $frameworkClass = shift;# this class
-	my $classToOverride = shift;# class to generate
+	my ($frameworkClass, $classToOverride) = ((shift), (shift));# this class, class to generate
 	my %config = @_;
 	my ($self, $initializer, $r) = (undef, $config{'new_sub_parse_line'});
 
 	(sub {
-		my ($i, $methodName, $genMethodName1, $genMethodName2) = (0);
+		my ($i, $methodName) = (0);
 		my @genSpec = (
 			1, 'new', "\$classToOverride,\$initializer",
 			0, 'execute',
@@ -35,8 +24,7 @@ sub new {
 		do {{
 			if ($genSpec[$i++]) {
 				$methodName = $genSpec[$i++];
-				($genMethodName1, $genMethodName2) = (uc(substr($methodName, 0, 1)), substr($methodName, 1, length($methodName) - 1));
-				$r = sprintf("*{%s::%s} = %s::_gen%s%sFunc(%s);return 1;", $classToOverride, $methodName, $frameworkClass, $genMethodName1, $genMethodName2, $genSpec[$i++]);
+				$r = sprintf("*{%s::%s} = %s::_gen%s%sFunc(%s);return 1;", $classToOverride, $methodName, $frameworkClass, uc(substr($methodName, 0, 1)), substr($methodName, 1, length($methodName) - 1), $genSpec[$i++]);
 			}
 			else {
 				$methodName = $genSpec[$i++];
@@ -53,26 +41,78 @@ sub new {
 	return $self;
 }
 
+
+###
+# Helpers
+
+
+sub trimEOL {
+	my $s = $_[0];
+	return substr($s, 0, length($s) - (($s =~ /[^\r\n]\z/) ? 0 : (($s =~ /\r\n/) ? 2 : 1)));
+}
+
+### TODO:
+## define methodology that should be standard in all environments
+#
+# e.g. support for
+# 
+# rip = relative import path for a spcific file's template definitions
+# lip = library import path for a specific file's template definitions (relative import paths are not traversed)
+# [rl]idef = include definition of a template by name, using relative lookup paths first
+# [rl]imp = import/dump the contents of a file by relative or library path
+
+sub handleLineOfComment {
+	my ($cmd, $str, $isMultiLine, $k, $v) = (undef, @_);
+	if (!(defined $str) || $str =~ /^[\r\n]*\z/) {
+		return;
+	}
+	if ($str =~ /^([rl]?i(?:m?p|def))\s+/) {
+		$k = $1;
+		$v = $';
+		if ($v =~ /^[^\\\/]+?(?:[\\\/][^\\\/]+?)*?\s*$/) {
+			$v = $&;
+			if ($k =~ /ip/) {
+				# add to path
+				$cmd = "path modification cmd";# TODO: complete
+			}
+			elsif ($k =~ /m/) {
+				# include direct
+				$cmd = "direct file inclusion";# TODO: complete
+			}
+			else {
+				# include a macro definition
+				$cmd = "load a template definition";# TODO: complete
+			}
+		}
+	}
+	#
+	#printf("handleLineOfComment(%d): '%s' => '%s'\n", ($isMultiLine ? 1 : 0), trimEOL($str), (defined($cmd) ? $cmd : "no directive"));
+}
+
+
+###
+# class functionality
+
+
 sub _genNewFunc {
-	my $classToOverride = shift;
-	my $initializer = shift;
+	my ($classToOverride, $initializer) = ((shift), (shift));
 	return sub {
 		my $state = 0;
-		my $self = [\$state, $initializer->()];
+		my $self = [undef, 0, \$state, $initializer->()];
 		return bless($self, $classToOverride);
 	};
 }
 
 sub _genParseLineFunc {
 	my %config = @_;
+	my $regex_line_comment_start;
 	
-	(exists($config{'regex_line_comment_start'}) && defined($config{'regex_line_comment_start'})) || die;
+	((exists $config{'regex_line_comment_start'}) && defined(($regex_line_comment_start = $config{'regex_line_comment_start'}))) || die;
 	
-	my ($regex_mline_comment_start, $regex_mline_comment_end, $validCommentStatesMapRef) = (undef, undef);
+	my ($inMultilineComment, $regex_mline_comment_start, $regex_mline_comment_end, $validCommentStatesMapRef) = (0, undef, undef);
 	my %validCommentStatesMap;
 	
-	if (exists($config{'regex_mline_comment_start'}) || exists($config{'regex_mline_comment_end'}))
-	{
+	if (exists($config{'regex_mline_comment_start'}) || exists($config{'regex_mline_comment_end'})) {
 		((exists $config{'regex_mline_comment_start'})
 			&& defined(($regex_mline_comment_start = $config{'regex_mline_comment_start'}))
 			&& (exists $config{'regex_mline_comment_end'})
@@ -81,24 +121,51 @@ sub _genParseLineFunc {
 	}
 	
 	$validCommentStatesMapRef = $config{'hash_comment_valid_states'};
-	if (defined $validCommentStatesMapRef)
-	{
+	if (defined $validCommentStatesMapRef) {
 		%validCommentStatesMap = %$validCommentStatesMapRef;
 	}
 	$validCommentStatesMapRef = (defined $validCommentStatesMapRef);
 	
 	return sub {
-		my ($s, $rc, $parserFunc) = ($_[1], @{$_[0]});
-		#print "GOT: '" . substr($s, 0, length($s) - (($s =~ /[^\r\n]\z/) ? 0 : (($s =~ /\r\n/) ? 2 : 1))) . "'\n";
+		my $self = $_[0];
+		my ($s, $rc, $parserFunc) = ($_[1], @$self[2..3]);
+		$self->[1]++;
+
+		#printf("GOT: '%s'\n", trimEOL($s));
+
 		do
 		{{
-			$s = $parserFunc->($s, $rc);
-			last;# TODO
+			if ($inMultilineComment) {
+				if ($s =~ $regex_mline_comment_end) {
+					my $pre = $`;
+					$s = $';
+					$inMultilineComment = 0;
+					handleLineOfComment($pre, 1);
+				}
+				else {
+					handleLineOfComment($s, 1);
+					$s = undef;
+				}
+				next;
+			}
+			elsif ((defined $validCommentStatesMapRef) && (exists $validCommentStatesMap{$$rc})) {
+				if ($s =~ $regex_mline_comment_start) {
+					my ($pre, $post) = ($`, $');
+					die if (defined($pre) && length($pre));
+					$s = $post;
+					$inMultilineComment = 1;
+					next;
+				}
+				elsif ($s =~ $regex_line_comment_start) {
+					my $post = $';
+					handleLineOfComment($post);
+					$s = undef;
+					next;
+				}
+			}
+			$s = $parserFunc->($self, $s, $rc);
 		}} while ((defined $s) && $$rc >= 0);
-		if ($$rc < 0)
-		{
-			# TODO: die and report error at line
-		}
+		die($self->[0]) if ($$rc < 0);
 	};
 }
 
