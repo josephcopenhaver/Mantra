@@ -31,13 +31,15 @@ sub new {
 
 
 		return sub {
-			my ($s, $rc, $state) = @_;# str, state_ptr/return code
-			$state = $$rc;
+			my ($self, $s, $rc, $cState) = @_;# self, str, state_ptr/return code
+			$cState = $$rc;
 			$$rc = -1; # default state is error state
+			$$rc = STATE_NONE;
 			return undef; # TODO
-	};};
+		};
+	};
 	$config{'hash_comment_valid_states'} = {
-		(map { $_ => 1 } (
+		(map { $_ => undef } (
 			STATE_NONE
 		))
 	};
