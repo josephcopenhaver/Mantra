@@ -58,9 +58,7 @@ sub _genNewFunc {
 	my $initializer = shift;
 	return sub {
 		my $state = 0;
-		my $self = {
-			(undef) => [\$state, $initializer->()]
-		};
+		my $self = [\$state, $initializer->()];
 		return bless($self, $classToOverride);
 	};
 }
@@ -90,8 +88,7 @@ sub _genParseLineFunc {
 	$validCommentStatesMapRef = (defined $validCommentStatesMapRef);
 	
 	return sub {
-		my $runtime = $_[0]->{(undef)};
-		my ($s, $rc, $parserFunc) = ($_[1], @$runtime);
+		my ($s, $rc, $parserFunc) = ($_[1], @{$_[0]});
 		#print "GOT: '" . substr($s, 0, length($s) - (($s =~ /[^\r\n]\z/) ? 0 : (($s =~ /\r\n/) ? 2 : 1))) . "'\n";
 		do
 		{{
